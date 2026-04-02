@@ -7,14 +7,30 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
+/* --- Body & Background --- */
 body {
     font-family: 'Segoe UI', sans-serif;
     background: linear-gradient(135deg,#f5f7fa,#e4ecf7);
     padding: 30px;
     overflow-x: hidden;
+    position: relative;
 }
 
-/* Title */
+/* --- Floating bubbles background --- */
+.bubble {
+    position: absolute;
+    border-radius: 50%;
+    background: rgba(76,175,80,0.15);
+    animation: floatBubble linear infinite;
+    pointer-events: none;
+}
+@keyframes floatBubble {
+    0% { transform: translateY(100vh) scale(0.5); opacity:0; }
+    50% { opacity:0.5; }
+    100% { transform: translateY(-10vh) scale(1); opacity:0; }
+}
+
+/* --- Title --- */
 h1 {
     text-align: center;
     margin-bottom: 20px;
@@ -22,7 +38,7 @@ h1 {
     color: #333;
 }
 
-/* Search */
+/* --- Search --- */
 #searchBox {
     display: block;
     margin: 0 auto 10px auto;
@@ -33,7 +49,6 @@ h1 {
     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     transition: all 0.3s ease;
 }
-
 #searchBox:focus {
     outline: none;
     transform: scale(1.02);
@@ -55,13 +70,12 @@ h1 {
     cursor: pointer;
     transition: all 0.2s ease;
 }
-
 .suggestion:hover {
     background: #f0f0f0;
     transform: translateX(5px);
 }
 
-/* Card */
+/* --- Card --- */
 .card {
     background: rgba(255,255,255,0.6);
     backdrop-filter: blur(18px);
@@ -72,21 +86,18 @@ h1 {
     animation: float 3s ease-in-out infinite;
     position: relative;
 }
-
-/* Floating animation */
 @keyframes float {
     0% { transform: translateY(0px); }
     50% { transform: translateY(-10px); }
     100% { transform: translateY(0px); }
 }
 
-/* KPI container */
+/* --- KPI --- */
 .kpi-container {
     display: flex;
     gap: 15px;
     margin-top: 20px;
 }
-
 .kpi {
     flex: 1;
     text-align: center;
@@ -97,16 +108,14 @@ h1 {
     transition: transform 0.3s ease, box-shadow 0.3s ease;
     box-shadow: 0 6px 15px rgba(0,0,0,0.05);
 }
-
 .kpi:hover {
     transform: translateY(-8px);
     box-shadow: 0 12px 25px rgba(0,0,0,0.12);
 }
-
 .kpi h3 { font-size: 1.5em; margin-bottom: 5px; color: #333; }
 .kpi p { margin:0; font-size: 0.9em; color: #666; }
 
-/* Badge */
+/* --- Badge --- */
 .badge {
     padding: 6px 12px;
     border-radius: 15px;
@@ -117,14 +126,13 @@ h1 {
 .active { background: #4caf50; }
 .inactive { background: #f44336; }
 
-/* Progress bar */
+/* --- Progress bar --- */
 .progress {
     background: #eee;
     border-radius: 10px;
     height: 12px;
     margin-top: 8px;
 }
-
 .progress-bar {
     height: 12px;
     border-radius: 10px;
@@ -133,7 +141,7 @@ h1 {
     transition: width 1s ease-in-out;
 }
 
-/* Table */
+/* --- Table --- */
 table {
     width: 100%;
     margin-top: 20px;
@@ -158,131 +166,107 @@ td, th {
 <canvas id="chart" height="120"></canvas>
 
 <script>
+/* --- Floating Bubbles --- */
+function createBubble(){
+    const bubble = document.createElement('div');
+    bubble.classList.add('bubble');
+    const size = Math.random() * 40 + 10;
+    bubble.style.width = size + 'px';
+    bubble.style.height = size + 'px';
+    bubble.style.left = Math.random() * window.innerWidth + 'px';
+    bubble.style.animationDuration = (5 + Math.random()*5) + 's';
+    document.body.appendChild(bubble);
+
+    setTimeout(()=> bubble.remove(), 10000);
+}
+setInterval(createBubble, 500);
+
+/* --- Sheet Data & Search --- */
 let sheetData = [];
 let chart;
-
 const API_URL = "https://script.google.com/macros/s/AKfycbzwtY0h5a0sGMXybaz4WlWPLOMhVSntMvLMwmZMIBkqwf6DtvRgcWEgKb9oAll-fxXQ/exec";
+fetch(API_URL).then(res=>res.json()).then(data=>sheetData=data);
 
-fetch(API_URL)
-.then(res => res.json())
-.then(data => sheetData = data);
-
-// Format number
 const formatNumber = n => Number(n||0).toLocaleString();
-
-// Dynamic month detect
 function getMonths(item){
-    return Object.keys(item)
-        .filter(k => k.includes("Count"))
-        .map(k => k.replace(" Count",""));
+    return Object.keys(item).filter(k => k.includes("Count")).map(k => k.replace(" Count",""));
 }
 
-// Search suggestions
 const searchBox = document.getElementById("searchBox");
 const suggestionBox = document.getElementById("suggestionBox");
 
 searchBox.addEventListener("keyup", function(){
     let keyword = this.value.toLowerCase();
     suggestionBox.innerHTML = "";
-
-    let filtered = sheetData.filter(item =>
+    let filtered = sheetData.filter(item=>
         (item["HQ ID"]+"").toLowerCase().includes(keyword) ||
         (item["Merchant Name"]+"").toLowerCase().includes(keyword)
     );
-
     filtered.slice(0,10).forEach(item=>{
         let div = document.createElement("div");
-        div.className = "suggestion";
-        div.innerText = item["Merchant Name"];
-        div.onclick = ()=>{ showResult(item); suggestionBox.innerHTML=""; };
+        div.className="suggestion";
+        div.innerText=item["Merchant Name"];
+        div.onclick=()=>{ showResult(item); suggestionBox.innerHTML=""; };
         suggestionBox.appendChild(div);
     });
 });
 
-// Show result
 function showResult(item){
-    let months = getMonths(item);
-
-    let totalCount = 0;
-    let totalVol = 0;
-    let tableRows = "";
-    let volumes = [];
-
+    let months=getMonths(item);
+    let totalCount=0, totalVol=0, tableRows="", volumes=[];
     months.forEach(m=>{
-        let c = Number(item[m+" Count"]||0);
-        let v = Number(item[m+" Volume"]||0);
-
-        totalCount += c;
-        totalVol += v;
+        let c=Number(item[m+" Count"]||0);
+        let v=Number(item[m+" Volume"]||0);
+        totalCount+=c;
+        totalVol+=v;
         volumes.push(v);
-
-        tableRows += `
-        <tr>
-            <td>${m}</td>
-            <td>${formatNumber(c)}</td>
-            <td>${formatNumber(v)}</td>
-        </tr>`;
+        tableRows+=`<tr><td>${m}</td><td>${formatNumber(c)}</td><td>${formatNumber(v)}</td></tr>`;
     });
 
-    // Portal badge
-    let status = (item["Portal Status"] || "").toLowerCase();
-    let badgeClass = status === "active" ? "active" : "inactive";
+    let status=(item["Portal Status"]||"").toLowerCase();
+    let badgeClass = status==="active"?"active":"inactive";
 
-    // MDR %
-    let raw = item["MDR Offus"] || 0;
-    let mdr = 0;
-    if(typeof raw === "string" && raw.includes("%")){
-        mdr = parseFloat(raw.replace("%","")).toFixed(2);
-    } else {
-        let num = parseFloat(raw);
-        mdr = !isNaN(num) ? (num * 100).toFixed(2) : "0.00";
-    }
+    let raw = item["MDR Offus"]||0;
+    let mdr=0;
+    if(typeof raw==="string" && raw.includes("%")) mdr=parseFloat(raw.replace("%","")).toFixed(2);
+    else { let num=parseFloat(raw); mdr=!isNaN(num)?(num*100).toFixed(2):"0.00"; }
 
-    document.getElementById("result").innerHTML = `
+    document.getElementById("result").innerHTML=`
     <div class="card">
         <h2>${item["Merchant Name"]}</h2>
         <p>HQ ID: ${item["HQ ID"]}</p>
         <p>Portal Status: <span class="badge ${badgeClass}">${item["Portal Status"]||"-"}</span></p>
         <p>MDR Offus: ${mdr}%</p>
         <div class="progress"><div class="progress-bar" style="width:0%"></div></div>
-
         <div class="kpi-container">
             <div class="kpi"><h3>${formatNumber(totalCount)}</h3><p>Total Count</p></div>
             <div class="kpi"><h3>${formatNumber(totalVol)}</h3><p>Total Volume</p></div>
         </div>
-
-        <table>
-            <tr><th>Month</th><th>Count</th><th>Volume</th></tr>
-            ${tableRows}
-        </table>
+        <table><tr><th>Month</th><th>Count</th><th>Volume</th></tr>${tableRows}</table>
     </div>`;
 
-    // Animate progress bar
-    setTimeout(()=>{ document.querySelector(".progress-bar").style.width = mdr+"%"; }, 100);
+    setTimeout(()=>{ document.querySelector(".progress-bar").style.width=mdr+"%"; },100);
 
-    // Chart
-    let ctx = document.getElementById("chart").getContext("2d");
+    let ctx=document.getElementById("chart").getContext("2d");
     if(chart) chart.destroy();
-    chart = new Chart(ctx,{
+    chart=new Chart(ctx,{
         type:'bar',
-        data:{
-            labels: months,
-            datasets:[{
-                label:"Volume",
-                data: volumes,
-                backgroundColor: 'rgba(76, 175, 80, 0.7)',
-                borderRadius: 5
-            }]
-        },
-        options:{
-            responsive:true,
-            plugins:{ legend:{ display:false } },
-            scales:{
-                y:{ beginAtZero:true }
-            }
-        }
+        data:{labels:months,datasets:[{label:"Volume",data:volumes,backgroundColor:'rgba(76,175,80,0.7)',borderRadius:5}]},
+        options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}
     });
 }
+
+/* --- Mouse interaction effect --- */
+document.addEventListener('mousemove', function(e){
+    const bubbles = document.querySelectorAll('.bubble');
+    bubbles.forEach(b=>{
+        const rect = b.getBoundingClientRect();
+        const dx = e.clientX - (rect.left + rect.width/2);
+        const dy = e.clientY - (rect.top + rect.height/2);
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if(dist<100) b.style.transform=`translateY(${Math.random()*5}px) translateX(${Math.random()*5}px)`;
+    });
+});
 </script>
 
 </body>
