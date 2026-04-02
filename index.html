@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MMQR Transaction Monitoring</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body {
+    font-family: 'Segoe UI', sans-serif;
+    background: linear-gradient(135deg,#f5f7fa,#e4ecf7);
+    padding: 30px;
+    overflow-x: hidden;
+}
+
+/* Title */
+h1 {
+    text-align: center;
+    margin-bottom: 20px;
+    font-weight: 700;
+    color: #333;
+}
+
+/* Search */
+#searchBox {
+    display: block;
+    margin: 0 auto 10px auto;
+    padding: 15px 20px;
+    width: 420px;
+    border-radius: 25px;
+    border: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    transition: all 0.3s ease;
+}
+
+#searchBox:focus {
+    outline: none;
+    transform: scale(1.02);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+}
+
+#suggestionBox {
+    width: 420px;
+    margin: 0 auto;
+    background: rgba(255,255,255,0.8);
+    border-radius: 15px;
+    max-height: 200px;
+    overflow-y: auto;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+}
+
+.suggestion {
+    padding: 10px 15px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.suggestion:hover {
+    background: #f0f0f0;
+    transform: translateX(5px);
+}
+
+/* Card */
+.card {
+    background: rgba(255,255,255,0.6);
+    backdrop-filter: blur(18px);
+    border-radius: 25px;
+    padding: 25px;
+    margin-top: 30px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+    animation: float 3s ease-in-out infinite;
+    position: relative;
+}
+
+/* Floating animation */
+@keyframes float {
+    0% { transform: translateY(0px); }
+    50% { transform: translateY(-10px); }
+    100% { transform: translateY(0px); }
+}
+
+/* KPI container */
+.kpi-container {
+    display: flex;
+    gap: 15px;
+    margin-top: 20px;
+}
+
+.kpi {
+    flex: 1;
+    text-align: center;
+    padding: 20px;
+    border-radius: 20px;
+    background: rgba(255,255,255,0.4);
+    backdrop-filter: blur(12px);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    box-shadow: 0 6px 15px rgba(0,0,0,0.05);
+}
+
+.kpi:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 12px 25px rgba(0,0,0,0.12);
+}
+
+.kpi h3 { font-size: 1.5em; margin-bottom: 5px; color: #333; }
+.kpi p { margin:0; font-size: 0.9em; color: #666; }
+
+/* Badge */
+.badge {
+    padding: 6px 12px;
+    border-radius: 15px;
+    color: white;
+    font-size: 13px;
+    font-weight: 600;
+}
+.active { background: #4caf50; }
+.inactive { background: #f44336; }
+
+/* Progress bar */
+.progress {
+    background: #eee;
+    border-radius: 10px;
+    height: 12px;
+    margin-top: 8px;
+}
+
+.progress-bar {
+    height: 12px;
+    border-radius: 10px;
+    background: #4caf50;
+    width: 0%;
+    transition: width 1s ease-in-out;
+}
+
+/* Table */
+table {
+    width: 100%;
+    margin-top: 20px;
+    border-collapse: collapse;
+}
+td, th {
+    padding: 10px;
+    text-align: center;
+    border-bottom: 1px solid rgba(0,0,0,0.05);
+}
+
+</style>
+</head>
+<body>
+
+<h1>MMQR Transaction Monitoring</h1>
+
+<input type="text" id="searchBox" placeholder="🔍 Search HQ ID / Merchant Name">
+<div id="suggestionBox"></div>
+
+<div id="result"></div>
+<canvas id="chart" height="120"></canvas>
+
+<script>
+let sheetData = [];
+let chart;
+
+const API_URL = "https://script.google.com/macros/s/AKfycbzwtY0h5a0sGMXybaz4WlWPLOMhVSntMvLMwmZMIBkqwf6DtvRgcWEgKb9oAll-fxXQ/exec";
+
+fetch(API_URL)
+.then(res => res.json())
+.then(data => sheetData = data);
+
+// Format number
+const formatNumber = n => Number(n||0).toLocaleString();
+
+// Dynamic month detect
+function getMonths(item){
+    return Object.keys(item)
+        .filter(k => k.includes("Count"))
+        .map(k => k.replace(" Count",""));
+}
+
+// Search suggestions
+const searchBox = document.getElementById("searchBox");
+const suggestionBox = document.getElementById("suggestionBox");
+
+searchBox.addEventListener("keyup", function(){
+    let keyword = this.value.toLowerCase();
+    suggestionBox.innerHTML = "";
+
+    let filtered = sheetData.filter(item =>
+        (item["HQ ID"]+"").toLowerCase().includes(keyword) ||
+        (item["Merchant Name"]+"").toLowerCase().includes(keyword)
+    );
+
+    filtered.slice(0,10).forEach(item=>{
+        let div = document.createElement("div");
+        div.className = "suggestion";
+        div.innerText = item["Merchant Name"];
+        div.onclick = ()=>{ showResult(item); suggestionBox.innerHTML=""; };
+        suggestionBox.appendChild(div);
+    });
+});
+
+// Show result
+function showResult(item){
+    let months = getMonths(item);
+
+    let totalCount = 0;
+    let totalVol = 0;
+    let tableRows = "";
+    let volumes = [];
+
+    months.forEach(m=>{
+        let c = Number(item[m+" Count"]||0);
+        let v = Number(item[m+" Volume"]||0);
+
+        totalCount += c;
+        totalVol += v;
+        volumes.push(v);
+
+        tableRows += `
+        <tr>
+            <td>${m}</td>
+            <td>${formatNumber(c)}</td>
+            <td>${formatNumber(v)}</td>
+        </tr>`;
+    });
+
+    // Portal badge
+    let status = (item["Portal Status"] || "").toLowerCase();
+    let badgeClass = status === "active" ? "active" : "inactive";
+
+    // MDR %
+    let raw = item["MDR Offus"] || 0;
+    let mdr = 0;
+    if(typeof raw === "string" && raw.includes("%")){
+        mdr = parseFloat(raw.replace("%","")).toFixed(2);
+    } else {
+        let num = parseFloat(raw);
+        mdr = !isNaN(num) ? (num * 100).toFixed(2) : "0.00";
+    }
+
+    document.getElementById("result").innerHTML = `
+    <div class="card">
+        <h2>${item["Merchant Name"]}</h2>
+        <p>HQ ID: ${item["HQ ID"]}</p>
+        <p>Portal Status: <span class="badge ${badgeClass}">${item["Portal Status"]||"-"}</span></p>
+        <p>MDR Offus: ${mdr}%</p>
+        <div class="progress"><div class="progress-bar" style="width:0%"></div></div>
+
+        <div class="kpi-container">
+            <div class="kpi"><h3>${formatNumber(totalCount)}</h3><p>Total Count</p></div>
+            <div class="kpi"><h3>${formatNumber(totalVol)}</h3><p>Total Volume</p></div>
+        </div>
+
+        <table>
+            <tr><th>Month</th><th>Count</th><th>Volume</th></tr>
+            ${tableRows}
+        </table>
+    </div>`;
+
+    // Animate progress bar
+    setTimeout(()=>{ document.querySelector(".progress-bar").style.width = mdr+"%"; }, 100);
+
+    // Chart
+    let ctx = document.getElementById("chart").getContext("2d");
+    if(chart) chart.destroy();
+    chart = new Chart(ctx,{
+        type:'bar',
+        data:{
+            labels: months,
+            datasets:[{
+                label:"Volume",
+                data: volumes,
+                backgroundColor: 'rgba(76, 175, 80, 0.7)',
+                borderRadius: 5
+            }]
+        },
+        options:{
+            responsive:true,
+            plugins:{ legend:{ display:false } },
+            scales:{
+                y:{ beginAtZero:true }
+            }
+        }
+    });
+}
+</script>
+
+</body>
+</html>
